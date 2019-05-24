@@ -1,1 +1,37 @@
-buildPack: go
+buildPack: none
+pipelineConfig:
+  pipelines:
+    pullRequest:
+      pipeline:
+        agent: 
+          image: gcr.io/jenkinsxio/builder-go:0.1.466
+        stages:
+          - name: build
+            steps:
+              - name: go-build
+                command: make linux
+          - name: postBuild
+            agent:
+              image: gcr.io/kaniko-project/executor:v0.9.0
+            steps:
+              - name: container-build-and-push
+                command: /kaniko/executor
+                args:
+                  - --dockerfile=/workspace/source/Dockerfile
+                  - --destination=gcr.io/jx-development/macox/test-app:${inputs.params.version}
+                  - --context=/workspace/source
+                  - --cache-repo=jenkins-x-docker-registry.jx.svc.cluster.local:5000/
+                  - --cache=true
+                  - --cache-dir=/workspace
+                  - --skip-tls-verify-registry=jenkins-x-docker-registry.jx.svc.cluster.local:5000
+    release:
+      pipeline:
+        agent: 
+          image: gcr.io/jenkinsxio/builder-go:0.1.466
+        stages:
+          - name: build
+            steps:
+              - command: export VERSION=`cat VERSION` && skaffold build -f skaffold.yaml
+                name: container-build
+              - command: jx step post build --image igcr.io/jx-development/macox/test-app:\$(cat VERSION)
+                name: post-build
