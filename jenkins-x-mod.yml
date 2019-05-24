@@ -1,0 +1,50 @@
+buildPack: none
+pipelineConfig:
+  pipelines:
+    pullRequest:
+      pipeline:
+        agent: {}
+        stages:
+          - name: build
+            steps:
+              - name: container-build
+                command: export VERSION=$PREVIEW_VERSION && skaffold build -f skaffold.yaml
+          - name: postBuild
+            steps:
+              - name: post-build
+                command: jx step post build --image $DOCKER_REGISTRY/$ORG/$APP_NAME:$PREVIEW_VERSION
+          - name: promote
+            steps:
+              - dir: /home/jenkins/go/src/github.com/macox/test-app/charts/preview
+                steps:
+                  - name: make-preview
+                    command: make preview
+                  - name: jx-preview
+                    command: jx preview --app $APP_NAME --dir ../..
+    
+    release:
+      pipeline:
+        agent: {}
+        stages:
+          - name: build
+            steps:
+              - name: container-build
+                command: export VERSION=`cat VERSION` && skaffold build -f skaffold.yaml
+              - name: post-build
+                command: jx step post build --image $DOCKER_REGISTRY/$ORG/$APP_NAME:\$(cat VERSION)
+          - name: postBuild
+            steps:
+              - command: echo "this is a post build step"
+              - command: jx version
+          - name: promote
+            steps:
+              - dir: /home/jenkins/go/src/github.com/macox/test-app/charts/test-app
+                steps:
+                  - name: changelog
+                    command: jx step changelog --version v\$(cat ../../VERSION)
+                  - name: helm-release
+                    command: jx step helm release
+                    comment: release the helm chart
+                  - name: jx-promote
+                    command: jx promote -b --all-auto --timeout 1h --version \$(cat ../../VERSION)
+                    comment: promote through all 'Auto' promotion Environments
